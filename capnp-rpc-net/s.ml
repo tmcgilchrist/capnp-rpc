@@ -2,9 +2,9 @@
 
 open Capnp_rpc_lwt
 
+(** A network address at which a vat can be reached. *)
 module type ADDRESS = sig
   type t
-  (** A network address at which a vat can be reached. *)
 
   val parse_uri : Uri.t -> ((t * string), [> `Msg of string]) result
   (** [parse_uri uri] extracts from a URI the network address and service ID. *)
@@ -42,9 +42,9 @@ module type NETWORK = sig
   val parse_third_party_cap_id : Private.Schema.Reader.pointer_t -> Types.third_party_cap_id
 end
 
+(** Stretching capability references across a network link.
+    Note: see {!module:Capnp_rpc_unix} for a higher-level wrapper for this API. *)
 module type VAT_NETWORK = sig
-  (** Stretching capability references across a network link.
-      Note: see {!module:Capnp_rpc_unix} for a higher-level wrapper for this API. *)
 
   type +'a capability
   (** An ['a capability] is a capability reference to a service of type ['a]. *)

@@ -9,13 +9,19 @@ module S = S
 
 module Endpoint = Endpoint
 module Two_party_network = Two_party_network
+
+(** Vat-level authentication and encryption. *)
 module Auth = Auth
+
+(** Create an Endpoint with TLS. *)
 module Tls_wrapper = Tls_wrapper
 
+(** Provides a way to restore Capabilities from a persistent token. *)
 module Restorer : sig
+
+  (** The object ID passed in the Cap'n Proto Bootstrap message. *)
   module Id : sig
     type t
-    (** The object ID passed in the Cap'n Proto Bootstrap message. *)
 
     val generate : unit -> t
     (** [generate ()] is a fresh unguessable service ID.
@@ -76,9 +82,9 @@ module Restorer : sig
   (** [single id cap] is a restorer that responds to [id] with [cap] and
       rejects everything else. *)
 
+  (** A user-provided function to restore services from persistent storage. *)
   module type LOADER = sig
     type t
-    (** A user-provided function to restore services from persistent storage. *)
 
     val hash : t -> Auth.hash
     (** [hash t] is the hash to apply to a [Restorer.Id.t] to get the storage key,
@@ -100,6 +106,7 @@ module Restorer : sig
         will also not call [load] twice in parallel for the same digest. *)
   end
 
+  (** A Table mapping from IDs to capabilities. *)
   module Table : sig
     type t
     (** A restorer that keeps a hashtable mapping IDs to capabilities in memory. *)
@@ -129,6 +136,9 @@ module Restorer : sig
   end
 
   val of_table : Table.t -> t
+  (** [of_table t] creates a restorer from a [Table.t].
+      Useful for hosting multiple sturdy refs, compared to [single] for hosting just one sturdy ref.
+   *)
 
   val restore : t -> Id.t -> ('a Capability.t, Capnp_rpc.Exception.t) result Lwt.t
   (** [restore t id] restores [id] using [t].
