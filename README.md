@@ -112,8 +112,10 @@ since they shouldn't care whether the services they use are local or accessed ov
 
 ## Tutorial
 
-This tutorial creates a simple echo service and then extends it.
-It shows how to use most of the features of the library, including defining services, using encryption and authentication over network links, and saving service state to disk.
+This tutorial creates a simple echo service and then extends it. It shows how
+to use most of the features of the library, including defining services,
+using encryption and authentication over network links, and saving service
+state to disk.
 
 ### A basic echo service
 
@@ -158,7 +160,8 @@ $ capnp compile echo_api.capnp -o ocaml
 echo_api.capnp --> echo_api.mli echo_api.ml
 ```
 
-The next step is to implement a client and server (in a new `echo.ml` file) using the generated `Echo_api` OCaml module.
+The next step is to implement a client and server (in a new `echo.ml` file) using the
+generated `Echo_api` OCaml module.
 
 For the server, you should inherit from the generated `Api.Service.Echo.service` class:
 
@@ -185,9 +188,11 @@ let local =
 
 The first line (`module Api`) instantiates the generated code to use this library's RPC implementation.
 
-The service object must provide one OCaml method for each method defined in the schema file, with `_impl` on the end of each one.
+The service object must provide one OCaml method for each method defined in the schema file, with
+`_impl` on the end of each one. Here we have `ping_impl` corresponding to `ping` from the schema
+definition.
 
-There's a bit of ugly boilerplate here, but it's quite simple:
+There's a few piece in play here (namely Functors and Objects) but it is really quite simple:
 
 - The `Api.Service.Echo.Ping` module defines the server-side API for the `ping` method.
 - `Ping.Params` is a reader for the parameters.
@@ -197,15 +202,15 @@ There's a bit of ugly boilerplate here, but it's quite simple:
   In this case there aren't any, but remember that a client using some future
   version of this protocol might pass some optional capabilities, and so you
   should always free them anyway.
-- `Service.Response.create Results.init_pointer` creates a new response message, using `Ping.Results.init_pointer` to initialise the payload contents.
+- `Service.Response.create Results.init_pointer` creates a new response message,
+  using `Ping.Results.init_pointer` to initialise the payload contents.
 - `response` is the complete message to be sent back, and `results` is the data part of it.
 - `Service.return` returns the results immediately (like `Lwt.return`).
 
 The client implementation is similar, but uses `Api.Client` instead of `Api.Service`.
-Here, we have a *builder* for the parameters and a *reader* for the results.
-`Api.Client.Echo.Ping.method_id` is a globally unique identifier for the ping method.
 
 ```ocaml
+
 module Echo = Api.Client.Echo
 
 let ping t msg =
@@ -215,14 +220,19 @@ let ping t msg =
   Capability.call_for_value_exn t method_id request >|= Results.reply_get
 ```
 
-`Capability.call_for_value_exn` sends the request message to the service and waits for the response to arrive.
-If the response is an error, it raises an exception.
-`Results.reply_get` extracts the `reply` field of the result.
+Here, we have:
+ - The `Api.Client.Echo` module defines the client-side API for calling `ping`
+ - `Capability.Request.create` *builds* the parameters
+ - `Capability.call_for_value_exn` sends the request message to the service and waits for the
+   response to arrive. If the response is an error, it raises an exception. `Results.reply_get`
+   extracts the `reply` field of the result.
+
+`Api.Client.Echo.Ping.method_id` is a globally unique identifier for the ping method.
 
 We don't need to release the capabilities of the results, as `call_for_value_exn` does that automatically.
-We'll see how to handle capabilities later.
+We will see how to handle capabilities later.
 
-With the boilerplate out of the way, we can now write a `main.ml` to test it:
+With the client and server pieces out of the way, we can now write a `main.ml` to test it:
 
 ```ocaml
 open Lwt.Infix
@@ -251,7 +261,7 @@ Here's a suitable `dune` file to compile the schema file and then the generated 
 (executable
  (name main)
  (libraries lwt.unix capnp-rpc-lwt logs.fmt)
- (flags (:standard -w -53-55)))
+ (flags (:standard -w -33-53-55)))
 
 (rule
  (targets echo_api.ml echo_api.mli)
@@ -267,9 +277,12 @@ $ dune exec ./main.exe
 Got reply "echo:foo"
 ```
 
-This isn't very exciting, so let's add some capabilities to the protocol...
+That's a start but perhaps not that exiciting, so let's add some capabilities to the protocol...
 
 ### Passing capabilities
+
+A capability represents evidence of the right to perform a certain operation.
+A capability encapsulates an objet reference plus access rights.
 
 ```capnp
 @0xb287252b6cbed46e;
@@ -284,10 +297,13 @@ interface Echo {
 }
 ```
 
-This version of the protocol adds a `heartbeat` method.
+This version of the protocol adds a `heartbeat` method, which gets the number `@1`.
+Fields must be numbered consecutively starting from zero in the order in which they were added.
+This shows how the protocol has evolved over time. Further details in the [schema specification][schema].
+
 Instead of returning the text directly, it will send it to a callback at regular intervals.
 
-The new `heartbeat_impl` method looks like this:
+The new `heartbeat_impl` method (* server section *) looks like this:
 
 ```ocaml
     method heartbeat_impl params release_params =
@@ -304,9 +320,9 @@ The new `heartbeat_impl` method looks like this:
 
 Note that all parameters in Cap'n Proto are optional, so we have to check for `callback` not being set
 (data parameters such as `msg` get a default value from the schema, which is
-`""` for strings if not set explicitly).
+`""` for strings if not set explicitly). Why optional read more [here][required-field].
 
-`Service.return_lwt fn` runs `fn ()` and replies to the `heartbeat` call when it finishes.
+`Service.return_lwt fn` runs `fun ()` and replies to the `heartbeat` call when it finishes.
 Here, the whole of the rest of the method is the argument to `return_lwt`, which is a common pattern.
 
 `notify callback msg` just sends a few messages to `callback` in a loop, and then releases it:
@@ -326,7 +342,18 @@ let notify callback ~msg =
   loop 3
 ```
 
-Exercise: create a `Callback` submodule in `echo.ml` and implement the client-side `Callback.log` function (hint: it's very similar to `ping`, but use `Capability.call_for_unit` because we don't care about the value of the result and we want to handle errors manually)
+Exercise 1: Create a `Callback` submodule in `echo.ml` implementing the client-side `Callback.log`
+function (hint: it's very similar to `ping`, but use `Capability.call_for_unit` because we don't
+care about the value of the result and we want to handle errors manually).
+
+``` ocaml
+module Callback = struct
+  let log t msg =
+     let module Callback = Api.Client.Callback in
+     ....
+
+end
+```
 
 To write the client for `Echo.heartbeat`, we take a user-provided callback object
 and put it into the request:
@@ -385,25 +412,29 @@ Step 3: The service receives the callback and calls the `log` method on it:
 </p>
 
 
-Exercise: implement `Callback.local fn` (hint: it's similar to the original `ping` service, but pass the message to `fn` and return with `Service.return_empty ()`)
+Exercise 2: implement `Echo.Callback.local fn` (hint: it's similar to the original `ping` service,
+but pass the message to `fn` and return with `Service.return_empty ()`)
 
 And testing it should give (three times, at one second intervals):
 
 ```
-$ ./main
+$ dune exec -- ./main.exe
 Callback got "foo"
 Callback got "foo"
 Callback got "foo"
 ```
 
-Note that the client gives the echo service permission to call its callback service by sending a message containing the callback to the service.
-No other access control updates are needed.
+Note that the client gives the echo service permission to call its callback service by sending a
+message containing the callback to the service. No other access control updates are needed.
 
-Note also a design choice here in the API: we could have made the `Echo.heartbeat` function take an OCaml callback and wrap it, but instead we chose to take a service and make `main.ml` do the wrapping.
-The advantage to doing it this way is that `main.ml` may one day want to pass a remote callback, as we'll see later.
+Note also a design choice here in the API: we could have made the `Echo.heartbeat` function take
+an OCaml callback and wrap it, but instead we chose to take a service and make `main.ml` do the
+wrapping. The advantage to doing it this way is that `main.ml` may one day want to pass a remote
+callback, as we'll see later.
 
-This still isn't very exciting, because we just stored an OCaml object pointer in a message and then pulled it out again.
-However, we can use the same code with the echo client and service in separate processes, communicating over the network...
+This still isn't very exciting, because we just stored an OCaml object pointer in a message and
+then pulled it out again. However, we can use the same code with the echo client and service in
+separate processes, communicating over the network...
 
 ### Networking
 
@@ -449,39 +480,42 @@ let () =
   <img src="./diagrams/vats.svg"/>
 </p>
 
-You'll need to edit your `dune` file to add a dependency on `capnp-rpc-unix` in the `(libraries ...` line and also:
+You'll need to edit your `dune` file to add a dependency on `capnp-rpc-unix` in the
+`(libraries ...` line and also install the library.
 
 ```
 $ opam depext -i capnp-rpc-unix
 ```
 
-Running this will give something like:
+Running main will now give something like:
 
 ```
-$ dune exec ./main.exe
+$ dune exec -- ./main.exe
 Connecting to echo service at: capnp://sha-256:3Tj5y5Q2qpqN3Sbh0GRPxgORZw98_NtrU2nLI0-Tn6g@127.0.0.1:7000/eBIndzZyoVDxaJdZ8uh_xBx5V1lfXWTJCDX-qEkgNZ4
 Callback got "foo"
 Callback got "foo"
 Callback got "foo"
 ```
 
-Once the server vat is running, we get a "sturdy ref" for the echo service, which is displayed as a "capnp://" URL.
+Once the server Vat is running, we get a "sturdy ref" for the echo service, which is displayed
+as a "capnp://" URL. A Vat is a collection of objects that can call each other directly.
+
 The URL contains several pieces of information:
 
 - The `sha-256:3Tj5y5Q2qpqN3Sbh0GRPxgORZw98_NtrU2nLI0-Tn6g` part is the fingerprint of the server's public key.
   When the client connects, it uses this to verify that it is connected to the right server (not an imposter).
-  Therefore, a Cap'n Proto vat does not need to be certified by a CA (and cannot be compromised by a rogue CA).
+  Therefore, a Cap'n Proto Vat does not need to be certified by a CA (and cannot be compromised by a rogue CA).
 
-- `127.0.0.1:7000` is the address to which clients will try to connect to reach the server vat.
+- `127.0.0.1:7000` is the address to which clients will try to connect to reach the server Vat.
 
 - `eBIndzZyoVDxaJdZ8uh_xBx5V1lfXWTJCDX-qEkgNZ4` is the (base64-encoded) service ID.
-  This is a secret that both identifies the service to use within the vat, and also grants access to it.
+  This is a secret that both identifies the service to use within the Vat, and also grants access to it.
 
 #### The server side
 
-The ``let secret_key = `Ephemeral`` line causes a new server key to be generated each time the program runs,
-so if you run it again you'll see a different capnp URL.
-For a real system you'll want to save the key so that the server's identity doesn't change when it is restarted.
+The ``let secret_key = `Ephemeral`` line causes a new server key to be generated each time
+the program runs, so if you run it again you'll see a different capnp URL. For a real system
+you'll want to save the key so that the server's identity doesn't change when it is restarted.
 You can use ``let secret_key = `File "secret-key.pem"`` for that.
 Then the file `secret-key.pem` will be created automatically the first time you start the service,
 and reused on future runs.
@@ -493,7 +527,7 @@ That might be useful if you need to interoperate with a client that doesn't supp
 You can use `` `Unix path`` for a Unix-domain socket at `path`, or
 `` `TCP (host, port)`` to accept connections over TCP.
 
-For TCP, you might want to listen on one address but advertise a different one, e.g.
+For TCP, you might want to listen on one address but advertise a different one,
 
 ```ocaml
 let listen_address = `TCP ("0.0.0.0", 7000)	(* Listen on all interfaces *)
@@ -503,7 +537,18 @@ let start_server () =
   let config = Capnp_rpc_unix.Vat_config.create ~secret_key ~public_address listen_address in
 ```
 
-In `start_server`:
+
+
+In `start_server`
+
+``` ocaml
+let start_server () =
+  let config = Capnp_rpc_unix.Vat_config.create ~secret_key listen_address in
+  let service_id = Capnp_rpc_unix.Vat_config.derived_id config "main" in
+  let restore = Capnp_rpc_net.Restorer.single service_id Echo.local in
+  Capnp_rpc_unix.serve config ~restore >|= fun vat ->
+  Capnp_rpc_unix.Vat.sturdy_uri vat service_id
+```
 
 - `let service_id = Capnp_rpc_unix.Vat_config.derived_id config "main"` creates the secret ID that
   grants access to the service. `derived_id` generates the ID deterministically from the secret key
@@ -513,15 +558,15 @@ In `start_server`:
 - `let restore = Restorer.single service_id Echo.local` configures a simple "restorer" that
   answers requests for `service_id` with our `Echo.local` service.
 
-- `Capnp_rpc_unix.serve config ~restore` creates the service vat using the
+- `Capnp_rpc_unix.serve config ~restore` creates the service Vat using the
   previous configuration items and starts it listening for incoming connections.
 
 - `Capnp_rpc_unix.Vat.sturdy_uri vat service_id` returns a "capnp://" URI for
-  the given service within the vat.
+  the given service within the Vat.
 
 #### The client side
 
-After starting the server and getting the sturdy URI, we create a client vat and connect to the sturdy ref.
+After starting the server and getting the sturdy URI, we create a client Vat and connect to the sturdy ref.
 The result is a proxy to the remote service via the network that can be used in
 exactly the same way as the direct reference we used before.
 
@@ -537,7 +582,7 @@ Edit the `dune` file to build a client and server:
 (executables
  (names client server)
  (libraries lwt.unix capnp-rpc-lwt logs.fmt capnp-rpc-unix)
- (flags (:standard -w -53-55)))
+ (flags (:standard -w -33-53-55)))
 
 (rule
  (targets echo_api.ml echo_api.mli)
@@ -586,7 +631,6 @@ based on command-line arguments provided by the user.
 And here's the corresponding `client.ml`:
 
 ```ocaml
-open Lwt.Infix
 open Capnp_rpc_lwt
 
 let () =
@@ -631,7 +675,8 @@ $ dune exec -- ./server.exe \
 Server running. Connect using "echo.cap".
 ```
 
-With the server still running in another window, run the client using the `echo.cap` file generated by the server:
+With the server still running in another window, run the client using the `echo.cap` file
+generated by the server:
 
 ```
 $ dune exec ./client.exe echo.cap
@@ -644,6 +689,9 @@ Note that we're using `Capnp_rpc_unix.with_cap_exn` here instead of `Sturdy_ref.
 It's almost the same, except that it displays a suitable progress indicator if the connection takes too long.
 
 ### Pipelining
+Cap'n Proto promises support an additional feature called [pipelining][Cap'n Proto RPC Protocol],
+the results of an RPC call can be passed as arguments to a new request to the same server. Both
+requests get collapsed into a single request and only a single network round trip is required.
 
 Let's say the server also offers a logging service, which the client can get from the main echo service:
 
@@ -655,8 +703,8 @@ interface Echo {
 }
 ```
 
-The implementation of the new method in the service is simple -
-we export the callback in the response in the same way we previously exported the client's callback in the request:
+The implementation of the new method in the service is simple, we export the callback in the response
+in the same way we previously exported the client's callback in the request:
 
 ```ocaml
     method get_logger_impl _ release_params =
@@ -667,7 +715,7 @@ we export the callback in the response in the same way we previously exported th
       Service.return response
 ```
 
-Exercise: create a `service_logger` that prints out whatever it gets (hint: use `Callback.local`)
+Exercise 3: create a `service_logger` that prints out whatever it gets (hint: use `Callback.local`)
 
 The client side is more interesting:
 
@@ -678,15 +726,15 @@ let get_logger t =
   Capability.call_for_caps t method_id request Results.callback_get_pipelined
 ```
 
-We could have used `call_and_wait` here
-(which is similar to `call_for_value` but doesn't automatically discard any capabilities in the result).
-However, that would mean waiting for the response to be sent back to us over the network before we could use it.
-Instead, we use `callback_get_pipelined` to get a promise for the capability from the promise of the `getLogger` call's result.
+We could have used `call_and_wait` here (which is similar to `call_for_value` but doesn't automatically
+discard any capabilities in the result). However, that would mean waiting for the response to be sent back
+to us over the network before we could use it. Instead, we use `callback_get_pipelined` to get a promise
+for the capability from the promise of the `getLogger` call's result.
 
-Note: the last argument to `call_for_caps` is a function for extracting the capabilities from the promised result.
-In the common case where you just want one and it's in the root result struct, you can just pass the accessor directly,
-as shown.
-Doing it this way allows `call_for_caps` to release any unused capabilities in the result automatically for us.
+Note: the last argument to `call_for_caps` is a function for extracting the capabilities from the promised
+result. In the common case where you just want one and it's in the root result struct, you can just pass the
+accessor directly, as shown. Doing it this way allows `call_for_caps` to release any unused capabilities in
+the result automatically for us.
 
 We can test it as follows:
 
@@ -724,24 +772,31 @@ let run_client service =
   Echo.heartbeat service "foo" callback
 ```
 
-Here, we ask the server for its logger and then (without waiting for the reply), tell it to send heartbeat messages to the promised logger (you should see the messages appear in the server process's output).
+Here, we ask the server for its logger and then (without waiting for the reply), tell it to send heartbeat
+messages to the promised logger (you should see the messages appear in the server process's output).
 
-Previously, when we exported our local `callback` object, it arrived at the service as a proxy that sent messages back to the client over the network.
-But when we send the (promise of the) server's own logger back to it, the RPC system detects this and "shortens" the path;
-the capability reference that the `heartbeat` handler gets is a direct reference to its own logger, which
-it can call without using the network.
+Previously, when we exported our local `callback` object, it arrived at the service as a proxy that sent
+messages back to the client over the network. But when we send the (promise of the) server's own logger back
+to it, the RPC system detects this and "shortens" the path; the capability reference that the `heartbeat`
+handler gets is a direct reference to its own logger, which it can call without using the network.
 
-These optimisations are very important because they allow us to build APIs like this with small functions that can be composed easily.
-Without pipelining, we would be tempted to clutter the protocol with specialised methods like `heartbeatToYourself` to avoid the extra round-trips most RPC protocols would otherwise require.
+These optimisations are very important because they allow us to build APIs like this with small functions
+that can be composed easily. Without pipelining, we would be tempted to clutter the protocol with specialised
+methods like `heartbeatToYourself` to avoid the extra round-trips most RPC protocols would otherwise require.
+
+At this point you can write a useful client / server with Cap'n Proto RPC Protocol. The following sections
+continue to build on this example but are optional.
 
 ### Hosting multiple sturdy refs
+What is a sturdy ref? TODO
 
-The `Restorer.single` restorer used above is useful for vats hosting a single sturdy ref.
-However, you may want to host multiple sturdy refs,
-perhaps to provide separate "admin" and "user" capabilities to different clients,
-or to allow services to be created and persisted as sturdy refs dynamically.
-To do this, we can use `Restorer.Table`.
-For example, we can extend our example to provide sturdy refs for both the main echo service and the logger service:
+The `Restorer.single` restorer used in `server.ml` is useful for Vats hosting a single sturdy ref.
+However, you may want to host multiple sturdy refs, perhaps to provide separate "admin" and "user"
+capabilities to different clients, or to allow services to be created and persisted as sturdy refs
+dynamically. To do this, we can use `Restorer.Table`.
+
+For example, we can extend our `server.ml` example to provide sturdy refs for both the main echo service and
+the logger service:
 
 ```ocaml
 let write_cap vat service_id cap_file =
@@ -813,6 +868,10 @@ Then pass the `sr` argument when creating the logger (you'll need to make it an 
 
 After restarting the server, the client should now display the logger's URI,
 which you can then use with `log.exe log URI MSG`.
+
+TODO Implied here but not spelled out is adding the above `run_client` code to `client.ml` to
+print out the `capnp` URI.
+TODO Implied `log.exe log URI MSG` implementation from the previous step, be more explict
 
 ### Creating and persisting sturdy refs dynamically
 
@@ -1001,7 +1060,8 @@ Congratulations! You now know how to:
 ### Further reading
 
 * [`capnp_rpc_lwt.mli`](capnp-rpc-lwt/capnp_rpc_lwt.mli) and [`s.ml`](capnp-rpc-lwt/s.ml) describe the OCaml API.
-* [Cap'n Proto schema file format][schema] shows how to build more complex structures, and the "Evolving Your Protocol" section explains how to change the schema without breaking backwards compatibility.
+* [Cap'n Proto schema file format][schema] shows how to build more complex structures, and the "Evolving Your Protocol" section
+  explains how to change the schema without breaking backwards compatibility.
 * <https://discuss.ocaml.org/> is a good place to ask questions (tag them as "capnp").
 * [The capnp-ocaml site][capnp-ocaml] explains how to read and build more complex types using the OCaml interface.
 * [E Reference Mechanics][] gives some insight into how distributed promises work.
@@ -1366,3 +1426,4 @@ We should also test with some malicious vats (that don't follow the protocol cor
 [api]: https://mirage.github.io/capnp-rpc/
 [NETWORK]: https://mirage.github.io/capnp-rpc/capnp-rpc-net/Capnp_rpc_net/S/module-type-NETWORK/index.html
 [calc_direct.ml]: ./test-bin/calc_direct.ml
+[required-field]: https://capnproto.org/faq.html#how-do-i-make-a-field-required-like-in-protocol-buffers
