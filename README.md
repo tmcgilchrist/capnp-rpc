@@ -82,7 +82,9 @@ Until that is implemented, Carol can ask Bob for a persistent reference (sturdy 
 
 ## Installing
 
-To install, you will need a platform with the `capnproto` package available (e.g., Debian >= 9). Then:
+To install, you will first need OCaml and Opam installed. If you don't have them installed, please do so following the instruction on [OCaml.org](https://ocaml.org/docs/install.html). 
+
+Next, you will need a platform with the `capnproto` package available (e.g., Debian >= 9). Then:
 
     opam depext -i capnp-rpc-unix
 
@@ -157,7 +159,7 @@ $ capnp compile echo_api.capnp -o ocaml
 echo_api.capnp --> echo_api.mli echo_api.ml
 ```
 
-The next step is to implement a client and server (in a new `echo.ml` file) using the generated `Echo_api` OCaml module.
+The next step is to implement a client and server, which you will create in a new `echo.ml` file, using the generated `Echo_api` OCaml module.
 
 For the server, you should inherit from the generated `Api.Service.Echo.service` class:
 
@@ -182,7 +184,7 @@ let local =
   end
 ```
 
-The first line (`module Api`) instantiates the generated code to use this library's RPC implementation.
+The first line (`module Api`) instantiates the generated code to use this library's RPC implementation. Read more about OCaml Functors on [OCaml.org](https://ocaml.org/learn/tutorials/functors.html). 
 
 The service object must provide one OCaml method for each method defined in the schema file, with `_impl` on the end of each one.
 
